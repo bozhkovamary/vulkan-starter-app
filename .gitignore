@@ -1,0 +1,20 @@
+build-*/
+shaders/*.spv
+imgui.ini
+
+# Visual Studio / build
+.vs/
+build-debug/
+build-release/
+out/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.log
+
+# Логи запуска
+log.txt
+
+# Скомпилированные шейдеры
+shaders/*.spv
