@@ -1,24 +1,51 @@
 #version 450 core
 
-// Входные атрибуты из вершинного буфера
-layout(location = 0) in vec3 in_position;
+// Входные атрибуты вершины 
+layout(location = 0) in vec3 in_position;   // позиция в локальных координатах
+layout(location = 1) in vec3 in_normal;     // нормаль (сгенерирована процедурно)
 
-// Uniform-буфер с выравниванием std140
-layout(std140, set = 0, binding = 0) uniform GlobalUniforms {
-    mat4 mvp;         // Матрица Model-View-Projection (64 байта)
-    vec4 base_color;  // Базовый цвет из ImGUI (16 байт)
-} ubo;
+// Выходные данные для фрагментного шейдера
+layout(location = 0) out vec3 out_world_pos;   // позиция в мировых координатах
+layout(location = 1) out vec3 out_normal;      // нормаль в мировых координатах
 
-// Выходной цвет для фрагментного шейдера
-layout(location = 0) out vec4 out_color;
+//SET 0: общие данные сцены
+layout(std140, set = 0, binding = 0) uniform SceneUniforms {
+    mat4 view_projection;               // P * V — из C++ уже перемножено
+    vec4 camera_position;               // xyz — позиция камеры
+    vec4 directional_light_direction;   // xyz — направление источника
+    vec4 directional_light_color;       // rgb — цвет источника
+    vec4 ambient_light;                 // rgb — цвет ambient
+    uvec4 light_counts;                 // x = кол-во point, y = кол-во spot
+} scene;
+
+// ===== SET 1: данные конкретной модели =====
+layout(std140, set = 1, binding = 0) uniform ModelUniform {
+    mat4 model;         // модельная матрица
+    vec4 albedo;        // rgb — базовый цвет
+    vec4 specular;      // rgb — цвет блика, a = shininess (коэффициент блеска)
+} model;
+
+// ===== PUSH CONSTANTS: для визуализации источников =====
+// Если flags & 1 == 1 — рисуем визуализацию, используем model_override и color_override,
+// игнорируем model.model и не применяем освещение.
+layout(push_constant) uniform Push {
+    mat4 model_override;   // модельная матрица для визуализации источника
+    vec4 color_override;   // цвет визуализации
+    uint flags;            // бит 0 = unlit
+} pc;
 
 void main() {
-    gl_Position = ubo.mvp * vec4(in_position, 1.0);
-    
-    // Задание 5: Процедурный цвет на основе локальной позиции.
-    // Сдвигаем координаты от [-1, 1] к [0, 1] для корректного отображения RGB
-    vec3 local_color = in_position * 0.5 + 0.5;
-    
-    // Итоговый цвет = локальный цвет вершины * цвет из интерфейса
-    out_color = vec4(local_color, 1.0) * ubo.base_color;
+    // Выбираем модельную матрицу: override, если это визуализация
+    bool unlit = (pc.flags & 1u) != 0u;
+    mat4 used_model = unlit ? pc.model_override : model.model;
+
+    // Мировая позиция вершины
+    vec4 world = used_model * vec4(in_position, 1.0);
+    gl_Position = scene.view_projection * world;
+
+    // Передаём в фрагментный шейдер мировую позицию и нормаль
+    out_world_pos = world.xyz;
+    // Нормаль трансформируется только поворотом, но пока модель не имеет
+    // неравномерного масштаба — можно использовать mat3 модельной матрицы.
+    out_normal = normalize(mat3(used_model) * in_normal);
 }
